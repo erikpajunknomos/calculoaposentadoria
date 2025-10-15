@@ -213,6 +213,11 @@ function formatCurrency(value: number, code = "BRL") {
   if (!isFinite(value)) return "-";
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: code, maximumFractionDigits: 0 }).format(value);
 }
+
+function inflateByMonths(value: number, months: number, annualInflationPct: number) {
+  const i = Math.max(0, annualInflationPct) / 100;
+  return value * Math.pow(1 + i, months / 12);
+}
 function formatNumber(value: number, digits = 1) {
   if (!isFinite(value)) return "-";
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: digits }).format(value);
@@ -312,6 +317,10 @@ export default function App() {
   const [swrPct, setSwrPct] = useState(3.5);
   const [accumRealReturn, setAccumRealReturn] = useState(5);
   const [retireRealReturn, setRetireRealReturn] = useState(3.5);
+  // --- NOVO: base de exibição e inflação anual
+  const [calcBase, setCalcBase] = useState<'real' | 'nominal'>('real');
+  const [inflationPct, setInflationPct] = useState(4);
+
 
   useEffect(() => {
     if (!showAdvanced) setRetireRealReturn(swrPct);
@@ -438,14 +447,22 @@ export default function App() {
     return Infinity;
   }, [targetWealth, currentWealth, monthlySaving, lumpSums, monthlyAccum]);
 
-  const chartData = useMemo(
+  
+  // --- NOVO: chaves dinâmicas para séries (real/nominal)
+  const seriesWealthKey =
+    calcBase === 'real' ? 'Patrimônio projetado (real)' : 'Patrimônio projetado (nominal)';
+  const seriesTargetKey = 'Meta de aposentadoria (SWR)';
+const chartData = useMemo(
     () =>
       fullProjection.map((row) => ({
         Meses: row.m,
-        "Patrimônio projetado (real)": row.wealth,
-        "Meta de aposentadoria (SWR)": targetWealth,
+        [seriesWealthKey]:
+          calcBase === 'real'
+            ? row.wealth
+            : inflateByMonths(row.wealth, row.m, inflationPct),
+        [seriesTargetKey]: targetWealth,
       })),
-    [fullProjection, targetWealth]
+    [fullProjection, targetWealth, calcBase, inflationPct, seriesWealthKey]
   );
 
   const yearTicks = useMemo(() => {
@@ -691,7 +708,32 @@ export default function App() {
 
             {/* Gráfico */}
             <Section>
-              <p className="font-semibold mb-2">Acumulação até a aposentadoria (valores reais)</p>
+              <div className="flex items-end justify-between gap-4 mb-2">
+                <p className="font-semibold">
+                  {calcBase === 'real'
+                    ? 'Acumulação até a aposentadoria (valores reais)'
+                    : 'Acumulação até a aposentadoria (valores nominais)'}
+                </p>
+                <div className="flex items-end gap-3">
+                  <div className="inline-flex rounded-xl border overflow-hidden">
+                    <button type="button" onClick={() => setCalcBase('real')}
+                      className={`px-3 py-1.5 text-sm ${calcBase === 'real' ? 'bg-[var(--brand-dark)] text-white' : 'bg-white text-slate-700'}`}>
+                      Real
+                    </button>
+                    <button type="button" onClick={() => setCalcBase('nominal')}
+                      className={`px-3 py-1.5 text-sm border-l ${calcBase === 'nominal' ? 'bg-[var(--brand-dark)] text-white' : 'bg-white text-slate-700'}`}>
+                      Nominal
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-slate-600">Inflação anual (%)</label>
+                    <input type="number" step={0.1} min={0} value={inflationPct}
+                      onChange={(e) => setInflationPct(Number(e.target.value) || 0)}
+                      className={`w-24 rounded-xl border px-2 py-1 ${calcBase === 'real' ? 'bg-slate-100 text-slate-400' : 'bg-white'}`}
+                      disabled={calcBase === 'real'} />
+                  </div>
+                </div>
+              </div>
               <div className="h-[320px]">
                 <ResponsiveContainer width="100%" height={320}>
                   <AreaChart data={chartData} margin={{ top: 44, right: 20, bottom: 0, left: 0 }}>
@@ -716,8 +758,8 @@ export default function App() {
                       />
                     )}
                     <Legend />
-                    <Area type="monotone" dataKey="Patrimônio projetado (real)" stroke="var(--brand-dark)" fill="var(--brand-dark)" strokeWidth={2} fillOpacity={0.15} />
-                    <Area type="monotone" dataKey="Meta de aposentadoria (SWR)" stroke="var(--brand-lime)" fill="var(--brand-lime)" strokeWidth={2} fillOpacity={0.12} />
+                    <Area type="monotone" dataKey={seriesWealthKey} stroke="var(--brand-dark)" fill="var(--brand-dark)" strokeWidth={2} fillOpacity={0.15} />
+                    <Area type="monotone" dataKey={seriesTargetKey} stroke="var(--brand-lime)" fill="var(--brand-lime)" strokeWidth={2} fillOpacity={0.12} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
