@@ -218,6 +218,12 @@ function inflateByMonths(value: number, months: number, annualInflationPct: numb
   const i = Math.max(0, annualInflationPct) / 100;
   return value * Math.pow(1 + i, months / 12);
 }
+
+function realToNominal(realAnnualPct: number, annualInflationPct: number) {
+  const r = (realAnnualPct || 0) / 100;
+  const i = Math.max(0, annualInflationPct || 0) / 100;
+  return ((1 + r) * (1 + i) - 1) * 100;
+}
 function formatNumber(value: number, digits = 1) {
   if (!isFinite(value)) return "-";
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: digits }).format(value);
@@ -370,6 +376,14 @@ export default function App() {
   // SWR necessário (implied) dado o patrimônio projetado e gasto
   const impliedSWRPct = wealthAtRetire > 0 ? (monthlySpend * 12 / wealthAtRetire) * 100 : null;
 
+  // --- DISPLAY (real/nominal)
+  const wealthAtRetireDisplay = calcBase === 'real' ? wealthAtRetire : inflateByMonths(wealthAtRetire, monthsToRetire, inflationPct);
+  const targetWealthDisplay = calcBase === 'real' ? targetWealth : inflateByMonths(targetWealth, monthsToRetire, inflationPct);
+  const sustainableMonthlySWRDisplay = calcBase === 'real' ? sustainableMonthlySWR : inflateByMonths(sustainableMonthlySWR, monthsToRetire, inflationPct);
+  const monthlySpendDisplay = calcBase === 'real' ? monthlySpend : inflateByMonths(monthlySpend, monthsToRetire, inflationPct);
+  const accumNominalPct = realToNominal(accumRealReturn, inflationPct);
+  const retireNominalPct = realToNominal(retireRealReturn, inflationPct);
+
   // === Required annual accumulation return to reach targetWealth by retirement ===
   function wealthAtRetireWithMonthlyAccum(monthlyRate){
     const arr = projectToRetirement({
@@ -460,7 +474,10 @@ const chartData = useMemo(
           calcBase === 'real'
             ? row.wealth
             : inflateByMonths(row.wealth, row.m, inflationPct),
-        [seriesTargetKey]: targetWealth,
+        [seriesTargetKey]:
+          calcBase === 'real'
+            ? targetWealth
+            : inflateByMonths(targetWealth, row.m, inflationPct),
       })),
     [fullProjection, targetWealth, calcBase, inflationPct, seriesWealthKey]
   );
@@ -603,7 +620,7 @@ const chartData = useMemo(
     <div className="md:col-span-3">
       <div className="text-xs text-slate-500">Número mágico (SWR)</div>
       <div className="mt-1 text-4xl md:text-5xl font-extrabold tracking-tight text-[var(--brand-dark)]">
-        {formatCurrency(targetWealth, "BRL")}
+        {formatCurrency(targetWealthDisplay, "BRL")}
       </div>
 
       <div className="text-slate-600 text-sm">
@@ -665,10 +682,10 @@ const chartData = useMemo(
                 {/* Patrimônio ao aposentar */}
                 <div className="rounded-xl border p-4 min-h-[148px]">
                   <div className="text-xs text-slate-500">Patrimônio ao aposentar</div>
-                  <div className="text-2xl font-semibold">{formatCurrency(wealthAtRetire, "BRL")}</div>
+                  <div className="text-2xl font-semibold">{formatCurrency(wealthAtRetireDisplay, "BRL")}</div>
                   <div className="text-xs text-slate-600">Horizonte: {Math.round(monthsToRetire / 12)} anos</div>
                   <div className="text-xs text-slate-600 mt-1">
-                    Pode gastar sem consumir o patrimônio: {formatCurrency(sustainableMonthlySWR, "BRL")}/mês (com {formatNumber(retireRealReturn, 1)}% real a.a.)
+                    Pode gastar sem consumir o patrimônio: {formatCurrency(sustainableMonthlySWRDisplay, "BRL")}/mês (com {formatNumber(retireRealReturn, 1)}% real a.a.{calcBase==='nominal' ? ` · ≈ ${formatNumber(retireNominalPct, 1)}% nominal a.a.` : ''})
                   </div>
                 </div>
 
@@ -677,7 +694,7 @@ const chartData = useMemo(
                   <div className="text-xs text-slate-600">{hasPerpetuity ? "Perpetuidade" : "Cobertura estimada"}</div>
                   <div className="mt-1">
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[var(--brand-lime)]/10 text-[var(--brand-dark)] border border-[var(--brand-lime)]/40">
-                      com gasto de {formatCurrency(monthlySpend, "BRL")}/mês
+                      com gasto de {formatCurrency(monthlySpendDisplay, "BRL")}/mês
                     </span>
                   </div>
                   <div className="text-2xl font-semibold">{hasPerpetuity ? "Atingível" : `${formatNumber(runwayY, 1)} anos`}</div>
