@@ -220,17 +220,6 @@ function formatNumber(value: number, digits = 1) {
 function monthlyRateFromRealAnnual(realAnnualPct: number) {
   return Math.pow(1 + realAnnualPct / 100, 1 / 12) - 1;
 }
-
-function inflateByMonths(value: number, months: number, annualInflationPct: number) {
-  if (!isFinite(value)) return value;
-  const i = Math.max(0, annualInflationPct) / 100;
-  return value * Math.pow(1 + i, months / 12);
-}
-function realToNominal(realAnnual: number, annualInflationPct: number) {
-  const r = realAnnual / 100;
-  const i = Math.max(0, annualInflationPct) / 100;
-  return ((1 + r) * (1 + i) - 1) * 100;
-}
 type Lump = { id: number; month: number; amount: number };
 
 /* ===========================
@@ -323,8 +312,6 @@ export default function App() {
   const [swrPct, setSwrPct] = useState(3.5);
   const [accumRealReturn, setAccumRealReturn] = useState(5);
   const [retireRealReturn, setRetireRealReturn] = useState(3.5);
-  const [calcBase, setCalcBase] = useState<"real"|"nominal">("real");
-  const [inflationPct, setInflationPct] = useState(4);
 
   useEffect(() => {
     if (!showAdvanced) setRetireRealReturn(swrPct);
@@ -370,12 +357,7 @@ export default function App() {
   const progressPct = Math.max(0, Math.min(100, (100 * wealthAtRetire) / Math.max(targetWealth, 1)));
   const diff = wealthAtRetire - targetWealth;
   const sustainableMonthlySWR = wealthAtRetire * monthlyRetire;
-  
-  // Display (real vs nominal)
-  const wealthAtRetireDisplay = calcBase === "real" ? wealthAtRetire : inflateByMonths(wealthAtRetire, monthsToRetire, inflationPct);
-  const targetWealthDisplay = calcBase === "real" ? targetWealth : inflateByMonths(targetWealth, monthsToRetire, inflationPct);
-  const sustainableMonthlySWRDisplay = calcBase === "real" ? sustainableMonthlySWR : inflateByMonths(sustainableMonthlySWR, monthsToRetire, inflationPct);
-const hasPerpetuity = sustainableMonthlySWR >= monthlySpend;
+  const hasPerpetuity = sustainableMonthlySWR >= monthlySpend;
   // SWR necessário (implied) dado o patrimônio projetado e gasto
   const impliedSWRPct = wealthAtRetire > 0 ? (monthlySpend * 12 / wealthAtRetire) * 100 : null;
 
@@ -456,16 +438,14 @@ const hasPerpetuity = sustainableMonthlySWR >= monthlySpend;
     return Infinity;
   }, [targetWealth, currentWealth, monthlySaving, lumpSums, monthlyAccum]);
 
-  const seriesWealthKey = calcBase === "real" ? "Patrimônio projetado (real)" : "Patrimônio projetado (nominal)";
-  const seriesTargetKey = "Meta de aposentadoria (SWR)";
   const chartData = useMemo(
     () =>
       fullProjection.map((row) => ({
         Meses: row.m,
-        [seriesWealthKey]: calcBase === "real" ? row.wealth : inflateByMonths(row.wealth, row.m, inflationPct),
-        [seriesTargetKey]: calcBase === "real" ? targetWealth : inflateByMonths(targetWealth, row.m, inflationPct),
+        "Patrimônio projetado (real)": row.wealth,
+        "Meta de aposentadoria (SWR)": targetWealth,
       })),
-    [fullProjection, targetWealth, calcBase, inflationPct, seriesWealthKey]
+    [fullProjection, targetWealth]
   );
 
   const yearTicks = useMemo(() => {
@@ -606,7 +586,7 @@ const hasPerpetuity = sustainableMonthlySWR >= monthlySpend;
     <div className="md:col-span-3">
       <div className="text-xs text-slate-500">Número mágico (SWR)</div>
       <div className="mt-1 text-4xl md:text-5xl font-extrabold tracking-tight text-[var(--brand-dark)]">
-        {formatCurrency(targetWealthDisplay, "BRL")}
+        {formatCurrency(targetWealth, "BRL")}
       </div>
 
       <div className="text-slate-600 text-sm">
@@ -668,10 +648,10 @@ const hasPerpetuity = sustainableMonthlySWR >= monthlySpend;
                 {/* Patrimônio ao aposentar */}
                 <div className="rounded-xl border p-4 min-h-[148px]">
                   <div className="text-xs text-slate-500">Patrimônio ao aposentar</div>
-                  <div className="text-2xl font-semibold">{formatCurrency(wealthAtRetireDisplay, "BRL")}</div>
+                  <div className="text-2xl font-semibold">{formatCurrency(wealthAtRetire, "BRL")}</div>
                   <div className="text-xs text-slate-600">Horizonte: {Math.round(monthsToRetire / 12)} anos</div>
                   <div className="text-xs text-slate-600 mt-1">
-                    Pode gastar sem consumir o patrimônio: {formatCurrency(sustainableMonthlySWRDisplay, "BRL")}/mês (com {formatNumber(retireRealReturn, 1)}% real a.a.)
+                    Pode gastar sem consumir o patrimônio: {formatCurrency(sustainableMonthlySWR, "BRL")}/mês (com {formatNumber(retireRealReturn, 1)}% real a.a.)
                   </div>
                 </div>
 
@@ -711,19 +691,7 @@ const hasPerpetuity = sustainableMonthlySWR >= monthlySpend;
 
             {/* Gráfico */}
             <Section>
-              <div className="flex items-end justify-between gap-4 mb-2">
-                <p className="font-semibold">{`Acumulação até a aposentadoria (${calcBase === "real" ? "valores reais" : "valores nominais"})`}</p>
-                <div className="flex items-end gap-3">
-                  <div className="inline-flex rounded-xl border overflow-hidden">
-                    <button type="button" onClick={() => setCalcBase("real")} className={`px-3 py-1.5 text-sm ${calcBase==="real"?"bg-[var(--brand-dark)] text-white":"bg-white text-slate-700"}`}>Real</button>
-                    <button type="button" onClick={() => setCalcBase("nominal")} className={`px-3 py-1.5 text-sm border-l ${calcBase==="nominal"?"bg-[var(--brand-dark)] text-white":"bg-white text-slate-700"}`}>Nominal</button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-slate-600">Inflação anual (%)</label>
-                    <input type="number" step={0.1} min={0} value={inflationPct} onChange={(e)=>setInflationPct(Number(e.target.value)||0)} className={`w-24 rounded-xl border px-2 py-1 ${calcBase==="real"?"bg-slate-100 text-slate-400":"bg-white"}`} disabled={calcBase==="real"} />
-                  </div>
-                </div>
-              </div>
+              <p className="font-semibold mb-2">Acumulação até a aposentadoria (valores reais)</p>
               <div className="h-[320px]">
                 <ResponsiveContainer width="100%" height={320}>
                   <AreaChart data={chartData} margin={{ top: 44, right: 20, bottom: 0, left: 0 }}>
@@ -748,8 +716,8 @@ const hasPerpetuity = sustainableMonthlySWR >= monthlySpend;
                       />
                     )}
                     <Legend />
-                    <Area type="monotone" dataKey={seriesWealthKey} stroke="var(--brand-dark)" fill="var(--brand-dark)" strokeWidth={2} fillOpacity={0.15} />
-                    <Area type="monotone" dataKey={seriesTargetKey} stroke="var(--brand-lime)" fill="var(--brand-lime)" strokeWidth={2} fillOpacity={0.12} />
+                    <Area type="monotone" dataKey="Patrimônio projetado (real)" stroke="var(--brand-dark)" fill="var(--brand-dark)" strokeWidth={2} fillOpacity={0.15} />
+                    <Area type="monotone" dataKey="Meta de aposentadoria (SWR)" stroke="var(--brand-lime)" fill="var(--brand-lime)" strokeWidth={2} fillOpacity={0.12} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
