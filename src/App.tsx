@@ -213,17 +213,6 @@ function formatCurrency(value: number, code = "BRL") {
   if (!isFinite(value)) return "-";
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: code, maximumFractionDigits: 0 }).format(value);
 }
-
-function inflateByMonths(value: number, months: number, annualInflationPct: number) {
-  const i = Math.max(0, annualInflationPct) / 100;
-  return value * Math.pow(1 + i, months / 12);
-}
-
-function realToNominal(realAnnualPct: number, annualInflationPct: number) {
-  const r = (realAnnualPct || 0) / 100;
-  const i = Math.max(0, annualInflationPct || 0) / 100;
-  return ((1 + r) * (1 + i) - 1) * 100;
-}
 function formatNumber(value: number, digits = 1) {
   if (!isFinite(value)) return "-";
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: digits }).format(value);
@@ -323,10 +312,6 @@ export default function App() {
   const [swrPct, setSwrPct] = useState(3.5);
   const [accumRealReturn, setAccumRealReturn] = useState(5);
   const [retireRealReturn, setRetireRealReturn] = useState(3.5);
-  // --- NOVO: base de exibição e inflação anual
-  const [calcBase, setCalcBase] = useState<'real' | 'nominal'>('real');
-  const [inflationPct, setInflationPct] = useState(4);
-
 
   useEffect(() => {
     if (!showAdvanced) setRetireRealReturn(swrPct);
@@ -375,14 +360,6 @@ export default function App() {
   const hasPerpetuity = sustainableMonthlySWR >= monthlySpend;
   // SWR necessário (implied) dado o patrimônio projetado e gasto
   const impliedSWRPct = wealthAtRetire > 0 ? (monthlySpend * 12 / wealthAtRetire) * 100 : null;
-
-  // --- DISPLAY (real/nominal)
-  const wealthAtRetireDisplay = calcBase === 'real' ? wealthAtRetire : inflateByMonths(wealthAtRetire, monthsToRetire, inflationPct);
-  const targetWealthDisplay = calcBase === 'real' ? targetWealth : inflateByMonths(targetWealth, monthsToRetire, inflationPct);
-  const sustainableMonthlySWRDisplay = calcBase === 'real' ? sustainableMonthlySWR : inflateByMonths(sustainableMonthlySWR, monthsToRetire, inflationPct);
-  const monthlySpendDisplay = calcBase === 'real' ? monthlySpend : inflateByMonths(monthlySpend, monthsToRetire, inflationPct);
-  const accumNominalPct = realToNominal(accumRealReturn, inflationPct);
-  const retireNominalPct = realToNominal(retireRealReturn, inflationPct);
 
   // === Required annual accumulation return to reach targetWealth by retirement ===
   function wealthAtRetireWithMonthlyAccum(monthlyRate){
@@ -461,24 +438,12 @@ export default function App() {
     return Infinity;
   }, [targetWealth, currentWealth, monthlySaving, lumpSums, monthlyAccum]);
 
-  
-  // --- NOVO: chaves dinâmicas para séries (real/nominal)
-  const seriesWealthKey =
-    calcBase === 'real' ? 'Patrimônio projetado (real)' : 'Patrimônio projetado (nominal)';
-  const seriesTargetKey = 'Meta de aposentadoria (SWR)';
-const chartData = useMemo(
-    () =>
-      fullProjection.map((row) => ({
-        Meses: row.m,
-        [seriesWealthKey]:
-          calcBase === 'real'
-            ? row.wealth
-            : inflateByMonths(row.wealth, row.m, inflationPct),
-        [seriesTargetKey]:
-          calcBase === 'real'
-            ? targetWealth
-            : inflateByMonths(targetWealth, row.m, inflationPct),
-      })),
+  const chartData = useMemo(
+    () => fullProjection.map((row) => ({
+      Meses: row.m,
+      [seriesWealthKey]: calcBase === 'real' ? row.wealth : inflateByMonths(row.wealth, row.m, inflationPct),
+      [seriesTargetKey]: targetWealth,
+    })),
     [fullProjection, targetWealth, calcBase, inflationPct, seriesWealthKey]
   );
 
@@ -501,6 +466,27 @@ const chartData = useMemo(
   return (
     <div className="min-h-screen w-full p-4 sm:p-8" style={{ ["--brand-dark" as any]: "#021e19", ["--brand-lime" as any]: "#c8e05b", ["--brand-offwhite" as any]: "#f4ece6", ["--brand-gray" as any]: "#a6a797", backgroundColor: "var(--brand-offwhite)" }}>
       <div className="mx-auto max-w-7xl space-y-6">
+        {/* Global toggle */}
+        <Section>
+          <div className="flex items-end gap-4 flex-wrap">
+            <div className="text-sm text-slate-600">Base de exibição</div>
+            <div className="inline-flex rounded-xl border overflow-hidden">
+              <button type="button" onClick={() => setCalcBase('real')}
+                className={`px-3 py-1.5 text-sm ${calcBase==='real'?'bg-[var(--brand-dark)] text-white':'bg-white text-slate-700'}`}>Real</button>
+              <button type="button" onClick={() => setCalcBase('nominal')}
+                className={`px-3 py-1.5 text-sm border-l ${calcBase==='nominal'?'bg-[var(--brand-dark)] text-white':'bg-white text-slate-700'}`}>Nominal</button>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-slate-600">Inflação anual (%)</label>
+              <input type="number" step={0.1} min={0} value={inflationPct}
+                onChange={(e)=>setInflationPct(Number(e.target.value)||0)}
+                className={`w-24 rounded-xl border px-2 py-1 ${calcBase==='real'?'bg-slate-100 text-slate-400':'bg-white'}`}
+                disabled={calcBase==='real'} />
+              <span className="text-xs text-slate-500">{calcBase==='real' ? 'Exibindo em moeda de hoje' : 'Exibindo valores nominais'}</span>
+            </div>
+          </div>
+        </Section>
+    
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-4">
@@ -620,7 +606,7 @@ const chartData = useMemo(
     <div className="md:col-span-3">
       <div className="text-xs text-slate-500">Número mágico (SWR)</div>
       <div className="mt-1 text-4xl md:text-5xl font-extrabold tracking-tight text-[var(--brand-dark)]">
-        {formatCurrency(targetWealthDisplay, "BRL")}
+        {formatCurrency(targetWealth, "BRL")}
       </div>
 
       <div className="text-slate-600 text-sm">
@@ -682,10 +668,10 @@ const chartData = useMemo(
                 {/* Patrimônio ao aposentar */}
                 <div className="rounded-xl border p-4 min-h-[148px]">
                   <div className="text-xs text-slate-500">Patrimônio ao aposentar</div>
-                  <div className="text-2xl font-semibold">{formatCurrency(wealthAtRetireDisplay, "BRL")}</div>
+                  <div className="text-2xl font-semibold">{formatCurrency(wealthAtRetire, "BRL")}</div>
                   <div className="text-xs text-slate-600">Horizonte: {Math.round(monthsToRetire / 12)} anos</div>
                   <div className="text-xs text-slate-600 mt-1">
-                    Pode gastar sem consumir o patrimônio: {formatCurrency(sustainableMonthlySWRDisplay, "BRL")}/mês (com {formatNumber(retireRealReturn, 1)}% real a.a.{calcBase==='nominal' ? ` · ≈ ${formatNumber(retireNominalPct, 1)}% nominal a.a.` : ''})
+                    Pode gastar sem consumir o patrimônio: {formatCurrency(sustainableMonthlySWR, "BRL")}/mês (com {formatNumber(retireRealReturn, 1)}% real a.a.)
                   </div>
                 </div>
 
@@ -694,7 +680,7 @@ const chartData = useMemo(
                   <div className="text-xs text-slate-600">{hasPerpetuity ? "Perpetuidade" : "Cobertura estimada"}</div>
                   <div className="mt-1">
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[var(--brand-lime)]/10 text-[var(--brand-dark)] border border-[var(--brand-lime)]/40">
-                      com gasto de {formatCurrency(monthlySpendDisplay, "BRL")}/mês
+                      com gasto de {formatCurrency(monthlySpend, "BRL")}/mês
                     </span>
                   </div>
                   <div className="text-2xl font-semibold">{hasPerpetuity ? "Atingível" : `${formatNumber(runwayY, 1)} anos`}</div>
@@ -725,32 +711,7 @@ const chartData = useMemo(
 
             {/* Gráfico */}
             <Section>
-              <div className="flex items-end justify-between gap-4 mb-2">
-                <p className="font-semibold">
-                  {calcBase === 'real'
-                    ? 'Acumulação até a aposentadoria (valores reais)'
-                    : 'Acumulação até a aposentadoria (valores nominais)'}
-                </p>
-                <div className="flex items-end gap-3">
-                  <div className="inline-flex rounded-xl border overflow-hidden">
-                    <button type="button" onClick={() => setCalcBase('real')}
-                      className={`px-3 py-1.5 text-sm ${calcBase === 'real' ? 'bg-[var(--brand-dark)] text-white' : 'bg-white text-slate-700'}`}>
-                      Real
-                    </button>
-                    <button type="button" onClick={() => setCalcBase('nominal')}
-                      className={`px-3 py-1.5 text-sm border-l ${calcBase === 'nominal' ? 'bg-[var(--brand-dark)] text-white' : 'bg-white text-slate-700'}`}>
-                      Nominal
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-slate-600">Inflação anual (%)</label>
-                    <input type="number" step={0.1} min={0} value={inflationPct}
-                      onChange={(e) => setInflationPct(Number(e.target.value) || 0)}
-                      className={`w-24 rounded-xl border px-2 py-1 ${calcBase === 'real' ? 'bg-slate-100 text-slate-400' : 'bg-white'}`}
-                      disabled={calcBase === 'real'} />
-                  </div>
-                </div>
-              </div>
+              <p className="font-semibold mb-2">Acumulação até a aposentadoria (valores reais)</p>
               <div className="h-[320px]">
                 <ResponsiveContainer width="100%" height={320}>
                   <AreaChart data={chartData} margin={{ top: 44, right: 20, bottom: 0, left: 0 }}>
@@ -775,8 +736,8 @@ const chartData = useMemo(
                       />
                     )}
                     <Legend />
-                    <Area type="monotone" dataKey={seriesWealthKey} stroke="var(--brand-dark)" fill="var(--brand-dark)" strokeWidth={2} fillOpacity={0.15} />
-                    <Area type="monotone" dataKey={seriesTargetKey} stroke="var(--brand-lime)" fill="var(--brand-lime)" strokeWidth={2} fillOpacity={0.12} />
+                    <Area type="monotone" dataKey="Patrimônio projetado (real)" stroke="var(--brand-dark)" fill="var(--brand-dark)" strokeWidth={2} fillOpacity={0.15} />
+                    <Area type="monotone" dataKey="Meta de aposentadoria (SWR)" stroke="var(--brand-lime)" fill="var(--brand-lime)" strokeWidth={2} fillOpacity={0.12} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
